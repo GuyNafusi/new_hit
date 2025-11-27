@@ -134,7 +134,8 @@ export default function Home() {
 
   // Play preview (Free)
   function playPreview() {
-    if (!trackInfo.preview_url) return alert("No preview available");
+    if (!trackInfo) return alert("No track loaded");
+    if (!trackInfo.preview_url) return alert("Preview not available for this track");
     const audio = new Audio(trackInfo.preview_url);
     audio.play();
     setStatus("Playing 30s preview 🎧");
@@ -163,7 +164,9 @@ export default function Home() {
           <h2>{trackInfo.name}</h2>
           <p>{trackInfo.artists}</p>
 
+          {/* Buttons */}
           <div style={{ marginTop: 12 }}>
+            {/* Full Track (Premium) */}
             <button
               onClick={playFullTrack}
               disabled={!userPremium}
@@ -176,11 +179,16 @@ export default function Home() {
               Play Full Track (Premium)
             </button>
 
-            {trackInfo.preview_url && (
-              <button onClick={playPreview} style={{ padding: "8px 16px" }}>
-                Play Preview (Free)
-              </button>
-            )}
+            {/* Preview (Free) */}
+            <button
+              onClick={playPreview}
+              style={{
+                padding: "8px 16px",
+                cursor: "pointer",
+              }}
+            >
+              Play Preview (Free)
+            </button>
           </div>
 
           {!userPremium && (
