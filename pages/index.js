@@ -3,10 +3,9 @@ import Head from "next/head";
 
 export default function Home() {
   const [accessToken, setAccessToken] = useState(null);
-  const [expiresIn, setExpiresIn] = useState(null);
-  const [deviceId, setDeviceId] = useState(null);
-  const [playerReady, setPlayerReady] = useState(false);
   const [trackInfo, setTrackInfo] = useState(null);
+  const [userPremium, setUserPremium] = useState(false);
+  const [deviceId, setDeviceId] = useState(null);
   const [status, setStatus] = useState("");
 
   const playerRef = useRef(null);
@@ -19,42 +18,50 @@ export default function Home() {
 
   const BASE = process.env.NEXT_PUBLIC_BASE_URL || "";
 
-  // Pull token from URL
+  // Get access_token from URL
   useEffect(() => {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     const at = url.searchParams.get("access_token");
-    const exp = url.searchParams.get("expires_in");
     if (at) {
       setAccessToken(at);
-      setExpiresIn(parseInt(exp || "3600", 10));
       window.history.replaceState({}, document.title, "/");
+      fetchUserProfile(at);
     }
   }, []);
 
-  // Setup Spotify SDK
+  // Fetch user profile to detect Premium
+  async function fetchUserProfile(token) {
+    try {
+      const res = await fetch("https://api.spotify.com/v1/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.product === "premium") setUserPremium(true);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  // Setup Web Playback SDK
   useEffect(() => {
     if (!accessToken) return;
-
-    const loadSDK = () => {
-      const script = document.createElement("script");
-      script.src = "https://sdk.scdn.co/spotify-player.js";
-      document.body.appendChild(script);
-    };
-
-    if (!window.Spotify) loadSDK();
+    if (!window.Spotify) {
+      const tag = document.createElement("script");
+      tag.src = "https://sdk.scdn.co/spotify-player.js";
+      document.head.appendChild(tag);
+    }
 
     window.onSpotifyWebPlaybackSDKReady = () => {
       const player = new window.Spotify.Player({
         name: "QR Player",
-        getOAuthToken: cb => cb(accessToken),
+        getOAuthToken: (cb) => cb(accessToken),
+        volume: 0.8,
       });
-
       playerRef.current = player;
 
       player.addListener("ready", ({ device_id }) => {
         setDeviceId(device_id);
-        setPlayerReady(true);
         setStatus("Player ready ✔");
       });
 
@@ -69,7 +76,7 @@ export default function Home() {
     const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
     readerRef.current = scanner;
 
-    scanner.render(async decodedText => {
+    scanner.render(async (decodedText) => {
       if (!decodedText.includes("open.spotify.com/track")) {
         alert("Please scan a Spotify TRACK QR code");
         return;
@@ -85,26 +92,23 @@ export default function Home() {
     };
   }, [accessToken]);
 
+  // Fetch track info
   async function fetchTrack(id) {
     try {
       setStatus("Loading track…");
-
       const res = await fetch(`https://api.spotify.com/v1/tracks/${id}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-
       const data = await res.json();
-
       setTrackInfo({
         id: data.id,
         name: data.name,
-        artists: data.artists.map(a => a.name).join(", "),
+        artists: data.artists.map((a) => a.name).join(", "),
         album: data.album.name,
         image: data.album.images[0]?.url,
         uri: data.uri,
         preview_url: data.preview_url,
       });
-
       setStatus("Track loaded ✔");
     } catch (err) {
       console.error(err);
@@ -112,27 +116,28 @@ export default function Home() {
     }
   }
 
-  async function handlePlay() {
-    if (!trackInfo) return alert("Scan a track first!");
-
-    const res = await fetch(
-      `https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`,
-      {
+  // Play full track (Premium)
+  async function playFullTrack() {
+    if (!deviceId || !trackInfo) return alert("Player not ready or track missing");
+    try {
+      await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
         method: "PUT",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({ uris: [trackInfo.uri] }),
-      }
-    );
-
-    if (res.status !== 204) {
-      alert("Unable to play (Premium required?)");
-      return;
+      });
+      setStatus("Playing full track 🎵");
+    } catch (err) {
+      console.error(err);
+      alert("Unable to play full track. Make sure you are Premium and player is ready.");
     }
+  }
 
-    setStatus("Playing 🎵");
+  // Play preview (Free)
+  function playPreview() {
+    if (!trackInfo.preview_url) return alert("No preview available");
+    const audio = new Audio(trackInfo.preview_url);
+    audio.play();
+    setStatus("Playing 30s preview 🎧");
   }
 
   function handleLogin() {
@@ -140,7 +145,7 @@ export default function Home() {
   }
 
   return (
-    <div style={{ fontFamily: "Arial", padding: 20 }}>
+    <div style={{ fontFamily: "Arial", padding: 20, textAlign: "center" }}>
       <Head>
         <title>Spotify QR Player</title>
       </Head>
@@ -148,26 +153,40 @@ export default function Home() {
       <h1>Spotify QR Player</h1>
       <p>{status}</p>
 
-      <button onClick={handleLogin}>Login with Spotify</button>
+      {!accessToken && <button onClick={handleLogin}>Login with Spotify</button>}
 
-      <div id="reader" style={{ width: "320px", margin: "20px auto" }}></div>
+      <div id="reader" style={{ width: 320, margin: "20px auto" }}></div>
 
       {trackInfo && (
         <div>
-          <img
-            src={trackInfo.image}
-            style={{ width: 200, borderRadius: 10 }}
-          />
+          <img src={trackInfo.image} style={{ width: 200, borderRadius: 10 }} />
           <h2>{trackInfo.name}</h2>
           <p>{trackInfo.artists}</p>
 
-          <button onClick={handlePlay}>Play Full Track</button>
+          <div style={{ marginTop: 12 }}>
+            <button
+              onClick={playFullTrack}
+              disabled={!userPremium}
+              style={{
+                padding: "8px 16px",
+                marginRight: 8,
+                cursor: userPremium ? "pointer" : "not-allowed",
+              }}
+            >
+              Play Full Track (Premium)
+            </button>
 
-          {trackInfo.preview_url && (
-            <div>
-              <p>Preview (30s):</p>
-              <audio controls src={trackInfo.preview_url}></audio>
-            </div>
+            {trackInfo.preview_url && (
+              <button onClick={playPreview} style={{ padding: "8px 16px" }}>
+                Play Preview (Free)
+              </button>
+            )}
+          </div>
+
+          {!userPremium && (
+            <p style={{ fontSize: "0.8em", marginTop: 8 }}>
+              Full track requires Spotify Premium. Free users can listen to the 30s preview.
+            </p>
           )}
         </div>
       )}
