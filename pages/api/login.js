@@ -1,4 +1,4 @@
-// Redirect user to Spotify authorize page
+// Redirects user to Spotify OAuth login page
 export default function handler(req, res) {
   const client_id = process.env.SPOTIFY_CLIENT_ID;
   const redirect_uri = `${process.env.NEXT_PUBLIC_BASE_URL}/api/callback`;
@@ -11,7 +11,7 @@ export default function handler(req, res) {
     "user-read-currently-playing"
   ].join(" ");
 
-  const state = Math.random().toString(36).substring(2, 15);
+  const state = Math.random().toString(36).substring(2, 15); // random state
   const params = new URLSearchParams({
     response_type: "code",
     client_id,
